@@ -11,9 +11,17 @@
         .is-loading .loading-overlay { display: flex; }
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
         .animate-spin { animation: spin 1s linear infinite; }
+        
+        /* Estilo do Interruptor */
+        .switch { position: relative; display: inline-block; width: 40px; height: 20px; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #cbd5e1; transition: .4s; border-radius: 20px; }
+        .slider:before { position: absolute; content: ""; height: 14px; width: 14px; left: 3px; bottom: 3px; background-color: white; transition: .4s; border-radius: 50%; }
+        input:checked + .slider { background-color: #2563eb; }
+        input:checked + .slider:before { transform: translateX(20px); }
     </style>
 </head>
-<body class="bg-slate-50 min-h-screen p-4">
+<body class="bg-slate-50 min-h-screen p-4 pb-12 font-sans">
 
     <div id="app-card" class="max-w-md mx-auto bg-white rounded-3xl shadow-2xl overflow-hidden relative">
         <div id="loader" class="absolute inset-0 bg-white/80 z-50 flex flex-col items-center justify-center">
@@ -22,8 +30,9 @@
         </div>
 
         <header class="bg-blue-600 p-6 text-white text-center">
-            <h1 class="text-xl font-black uppercase tracking-widest">Gestão Financeira</h1>
-            <div class="flex justify-around mt-4">
+            <h1 class="text-xl font-black uppercase tracking-widest leading-none">Gestão Financeira</h1>
+            
+            <div class="flex justify-around mt-4 border-b border-blue-400/30 pb-4">
                 <div class="text-center">
                     <p class="text-[10px] opacity-70 uppercase">Pendente</p>
                     <p id="resumo-pendente" class="font-bold text-lg text-red-200">R$ 0,00</p>
@@ -33,10 +42,17 @@
                     <p id="resumo-total" class="font-bold text-lg">R$ 0,00</p>
                 </div>
             </div>
+
+            <div class="flex items-center justify-center gap-3 mt-4">
+                <span class="text-[10px] font-bold uppercase opacity-80">Ver apenas pendentes</span>
+                <label class="switch">
+                    <input type="checkbox" id="filter-unpaid" onchange="renderBills()">
+                    <span class="slider"></span>
+                </label>
+            </div>
         </header>
 
-        <div id="bills-list" class="p-4 space-y-3 min-h-[300px]">
-            </div>
+        <div id="bills-list" class="p-4 space-y-3 min-h-[300px]"></div>
 
         <footer class="p-4 border-t bg-gray-50">
             <button onclick="syncData()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-2xl shadow-lg transition-all active:scale-95 uppercase text-sm">
@@ -46,44 +62,52 @@
     </div>
 
     <script>
-        // COLOQUE SUA URL AQUI
         const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbweCF9HnIDcX0qBJt_UzL5J8qRMzc-E8ncG1jjOlOq8WGclOrb2y9_v2sVoyAQQ3kDvsA/exec"; 
         
         let billsData = [];
 
         async function syncData() {
             const loader = document.getElementById('loader');
-            loader.style.display = 'flex'; // Força o loader a aparecer ao clicar no botão
-            
+            loader.style.display = 'flex';
             try {
                 const response = await fetch(WEB_APP_URL, { redirect: "follow" });
                 billsData = await response.json();
+                billsData.sort((a, b) => parseInt(a.vencimento) - parseInt(b.vencimento));
                 renderBills();
             } catch (e) {
                 console.error("Erro na carga:", e);
-                document.getElementById('bills-list').innerHTML = `<p class="text-center text-red-500 py-10 font-bold">Erro ao carregar dados.</p>`;
+                document.getElementById('bills-list').innerHTML = `<p class="text-center text-red-500 py-10 font-bold">Erro de conexão.</p>`;
             } finally {
-                // REMOVE O LOADER INDEPENDENTE DE QUALQUER COISA
                 loader.style.display = 'none';
             }
         }
 
+        function getStatusVencimento(diaVencimento) {
+            const hoje = new Date();
+            const diaHoje = hoje.getDate();
+            const diff = diaVencimento - diaHoje;
+            if (diff === 0) return { texto: "Vence hoje!", cor: "text-orange-600" };
+            if (diff === 1) return { texto: "Vence amanhã", cor: "text-blue-500" };
+            if (diff > 1) return { texto: `Faltam ${diff} dias`, cor: "text-gray-400" };
+            return { texto: "Vencida", cor: "text-red-500" };
+        }
+
         function renderBills() {
             const listElement = document.getElementById('bills-list');
+            const onlyUnpaid = document.getElementById('filter-unpaid').checked;
             listElement.innerHTML = '';
+            
             let total = 0, pendente = 0;
 
-            if (!billsData || billsData.length === 0) {
-                listElement.innerHTML = '<p class="text-center text-gray-400 py-10">Planilha vazia ou erro de leitura.</p>';
-                return;
-            }
-
             billsData.forEach(bill => {
-                // Garante que o valor seja um número para não travar o cálculo
                 const valorNum = parseFloat(bill.valor) || 0;
                 total += valorNum;
                 if (!bill.status) pendente += valorNum;
 
+                // Lógica do Filtro: Se o interruptor estiver ligado, pula os que estão pagos
+                if (onlyUnpaid && bill.status) return;
+
+                const vencInfo = getStatusVencimento(parseInt(bill.vencimento));
                 const div = document.createElement('div');
                 div.className = `flex items-center p-4 border-2 rounded-2xl transition-all ${bill.status ? 'bg-gray-50 pago border-transparent' : 'bg-white shadow-sm border-blue-50'}`;
                 
@@ -93,7 +117,10 @@
                            class="h-6 w-6 text-blue-600 border-2 cursor-pointer">
                     <div class="ml-4 flex-1">
                         <label class="block font-bold text-gray-700 leading-tight">${bill.label || 'Sem Nome'}</label>
-                        <span class="text-[10px] font-bold text-gray-400 uppercase">Vencimento: Dia ${bill.vencimento || '--'}</span>
+                        <div class="flex items-center gap-2">
+                            <span class="text-[10px] font-bold text-gray-400 uppercase tracking-tighter">Dia ${bill.vencimento}</span>
+                            ${!bill.status ? `<span class="text-[10px] font-black uppercase ${vencInfo.cor}">${vencInfo.texto}</span>` : ''}
+                        </div>
                     </div>
                     <div class="text-right">
                         <span class="block font-black text-blue-600 italic">R$ ${valorNum.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</span>
@@ -107,23 +134,18 @@
         }
 
         async function toggleBill(id, status) {
-            // Atualiza visualmente primeiro (Optimistic UI)
             const bill = billsData.find(b => b.id === id);
             if (bill) bill.status = status;
             renderBills();
-
             try {
                 await fetch(WEB_APP_URL, {
                     method: 'POST',
                     mode: 'no-cors',
                     body: JSON.stringify({ id, status })
                 });
-            } catch (e) {
-                console.error("Erro ao salvar no Google");
-            }
+            } catch (e) { console.error("Erro ao salvar"); }
         }
 
-        // Executa ao carregar a página
         if(WEB_APP_URL.includes("https")) syncData();
     </script>
 </body>
