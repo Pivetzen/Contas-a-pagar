@@ -13,61 +13,71 @@
         .animate-spin { animation: spin 1s linear infinite; }
     </style>
 </head>
-<body class="bg-slate-50 min-h-screen p-4 pb-12">
+<body class="bg-slate-50 min-h-screen p-4">
 
     <div id="app-card" class="max-w-md mx-auto bg-white rounded-3xl shadow-2xl overflow-hidden relative">
-        <div class="loading-overlay absolute inset-0 bg-white/60 z-10 flex items-center justify-center">
-            <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+        <div class="loading-overlay absolute inset-0 bg-white/80 z-10 flex flex-col items-center justify-center">
+            <div class="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600 mb-2"></div>
+            <p class="text-xs text-blue-600 font-bold">Conectando ao Google...</p>
         </div>
 
         <header class="bg-blue-600 p-6 text-white text-center">
-            <h1 class="text-xl font-bold uppercase tracking-widest">Gestão Financeira</h1>
+            <h1 class="text-xl font-black uppercase tracking-widest">Gestão Financeira</h1>
             <div class="flex justify-around mt-4">
                 <div class="text-center">
-                    <p class="text-[10px] opacity-80 uppercase">Pendente</p>
+                    <p class="text-[10px] opacity-70 uppercase">Pendente</p>
                     <p id="resumo-pendente" class="font-bold text-lg text-red-200">R$ 0,00</p>
                 </div>
                 <div class="text-center">
-                    <p class="text-[10px] opacity-80 uppercase">Total</p>
+                    <p class="text-[10px] opacity-70 uppercase">Total</p>
                     <p id="resumo-total" class="font-bold text-lg">R$ 0,00</p>
                 </div>
             </div>
         </header>
 
-        <div id="bills-list" class="p-4 space-y-3 min-h-[200px]">
-            <p class="text-center text-gray-400 py-8">Carregando...</p>
-        </div>
+        <div id="bills-list" class="p-4 space-y-3 min-h-[300px]">
+            </div>
 
-        <footer class="p-4 border-t">
-            <button onclick="syncData()" class="w-full bg-blue-600 text-white font-bold py-3 rounded-xl shadow-lg active:scale-95 transition-all">
-                ATUALIZAR DA PLANILHA
+        <footer class="p-4 border-t bg-gray-50">
+            <button onclick="syncData()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-2xl shadow-lg transition-all active:scale-95 uppercase text-sm">
+                Sincronizar Planilha
             </button>
         </footer>
     </div>
 
     <script>
-        // COLE AQUI A NOVA URL QUE VOCÊ GEROU NO PASSO 1
-        const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxEQxK5hEvKq9XfhG-ohIkRrLcnEDALcQ8ItzZpB-g5Bz8SlGeowJlvitS45QeCCiIqbg/exec"; 
+        // SUBSTITUA PELA URL DA NOVA IMPLANTAÇÃO (QUE TERMINA EM /EXEC)
+        const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbweCF9HnIDcX0qBJt_UzL5J8qRMzc-E8ncG1jjOlOq8WGclOrb2y9_v2sVoyAQQ3kDvsA/exec"; 
         
         let billsData = [];
 
         async function syncData() {
+            if (!WEB_APP_URL || WEB_APP_URL.includes("SUA_NOVA_URL")) {
+                alert("Por favor, insira a URL do seu Google Script no código.");
+                return;
+            }
+
             const card = document.getElementById('app-card');
             card.classList.add('is-loading');
             
             try {
-                // Adicionado redirect: "follow" para resolver o erro de CORS do Google
-                const response = await fetch(WEB_APP_URL, { redirect: "follow" });
-                if (!response.ok) throw new Error("Erro na rede");
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 segundos de limite
+
+                const response = await fetch(WEB_APP_URL, { 
+                    redirect: "follow",
+                    signal: controller.signal 
+                });
                 
+                clearTimeout(timeoutId);
                 billsData = await response.json();
                 renderBills();
             } catch (e) {
-                console.error("Erro detalhado:", e);
+                console.error("Erro na carga:", e);
                 document.getElementById('bills-list').innerHTML = `
-                    <div class="text-center p-4">
-                        <p class="text-red-500 font-bold">Erro de Sincronização</p>
-                        <p class="text-xs text-gray-500 mt-2">Verifique se a implantação está como "Qualquer pessoa" e use uma "Nova Versão".</p>
+                    <div class="text-center p-8">
+                        <p class="text-red-500 font-bold italic">A conexão demorou muito ou falhou.</p>
+                        <p class="text-[10px] text-gray-500 mt-4 uppercase">Verifique se você publicou como "Nova Versão" e "Qualquer Pessoa".</p>
                     </div>`;
             } finally {
                 card.classList.remove('is-loading');
@@ -79,23 +89,27 @@
             listElement.innerHTML = '';
             let total = 0, pendente = 0;
 
+            if (billsData.length === 0) {
+                listElement.innerHTML = '<p class="text-center text-gray-400 py-10">Nenhuma conta encontrada na planilha.</p>';
+                return;
+            }
+
             billsData.forEach(bill => {
-                const valorNum = parseFloat(bill.valor) || 0;
-                total += valorNum;
-                if (!bill.status) pendente += valorNum;
+                total += bill.valor;
+                if (!bill.status) pendente += bill.valor;
 
                 const div = document.createElement('div');
-                div.className = `flex items-center p-4 border rounded-2xl transition-all ${bill.status ? 'bg-gray-50 pago border-transparent' : 'bg-white shadow-sm border-blue-50'}`;
+                div.className = `flex items-center p-4 border-2 rounded-2xl transition-all ${bill.status ? 'bg-gray-50 pago border-transparent' : 'bg-white shadow-sm border-blue-50'}`;
                 
                 div.innerHTML = `
                     <input type="checkbox" ${bill.status ? 'checked' : ''} 
-                           onchange="toggleBill('${bill.id}', this.checked)" class="h-6 w-6 text-blue-600">
+                           onchange="toggleBill('${bill.id}', this.checked)" class="h-6 w-6 text-blue-600 border-2">
                     <div class="ml-4 flex-1">
                         <label class="block font-bold text-gray-700 leading-tight">${bill.label}</label>
-                        <span class="text-[10px] font-bold text-gray-400 uppercase">Dia ${bill.vencimento}</span>
+                        <span class="text-[10px] font-bold text-gray-400 uppercase tracking-tighter">Vencimento: Dia ${bill.vencimento}</span>
                     </div>
                     <div class="text-right">
-                        <span class="block font-bold text-blue-600">R$ ${valorNum.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</span>
+                        <span class="block font-black text-blue-600 italic">R$ ${bill.valor.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</span>
                     </div>
                 `;
                 listElement.appendChild(div);
@@ -106,21 +120,24 @@
         }
 
         async function toggleBill(id, status) {
+            // "Optimistic UI" - Atualiza na tela antes de ir pro banco
+            const bill = billsData.find(b => b.id === id);
+            if (bill) bill.status = status;
+            renderBills();
+
             try {
                 await fetch(WEB_APP_URL, {
                     method: 'POST',
-                    mode: 'no-cors', // Essencial para evitar bloqueio de CORS no POST do Google
+                    mode: 'no-cors',
                     body: JSON.stringify({ id, status })
                 });
-                const bill = billsData.find(b => b.id === id);
-                if (bill) bill.status = status;
-                renderBills();
             } catch (e) {
-                console.error("Erro ao salvar:", e);
+                console.error("Erro ao salvar");
             }
         }
 
-        if(WEB_APP_URL !== "https://script.google.com/macros/s/AKfycbxEQxK5hEvKq9XfhG-ohIkRrLcnEDALcQ8ItzZpB-g5Bz8SlGeowJlvitS45QeCCiIqbg/exec") syncData();
+        // Auto-executa ao abrir
+        syncData();
     </script>
 </body>
 </html>
