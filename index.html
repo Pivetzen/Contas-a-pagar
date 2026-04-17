@@ -3,13 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Finanças Dinâmicas</title>
+    <title>Gestão Financeira</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         .pago { opacity: 0.5; filter: grayscale(1); }
-        .pago label { text-decoration: line-through; }
         .loading-overlay { display: none; }
         .is-loading .loading-overlay { display: flex; }
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        .animate-spin { animation: spin 1s linear infinite; }
     </style>
 </head>
 <body class="bg-slate-50 min-h-screen p-4 pb-12">
@@ -23,40 +24,53 @@
             <h1 class="text-xl font-bold uppercase tracking-widest">Gestão Financeira</h1>
             <div class="flex justify-around mt-4">
                 <div class="text-center">
-                    <p class="text-[10px] opacity-80">PENDENTE</p>
+                    <p class="text-[10px] opacity-80 uppercase">Pendente</p>
                     <p id="resumo-pendente" class="font-bold text-lg text-red-200">R$ 0,00</p>
                 </div>
                 <div class="text-center">
-                    <p class="text-[10px] opacity-80">TOTAL</p>
+                    <p class="text-[10px] opacity-80 uppercase">Total</p>
                     <p id="resumo-total" class="font-bold text-lg">R$ 0,00</p>
                 </div>
             </div>
         </header>
 
         <div id="bills-list" class="p-4 space-y-3 min-h-[200px]">
-            </div>
+            <p class="text-center text-gray-400 py-8">Carregando...</p>
+        </div>
 
         <footer class="p-4 border-t">
-            <button onclick="syncData()" class="w-full bg-blue-600 text-white font-bold py-3 rounded-xl shadow-lg">
+            <button onclick="syncData()" class="w-full bg-blue-600 text-white font-bold py-3 rounded-xl shadow-lg active:scale-95 transition-all">
                 ATUALIZAR DA PLANILHA
             </button>
         </footer>
     </div>
 
     <script>
+        // COLE AQUI A NOVA URL QUE VOCÊ GEROU NO PASSO 1
         const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxEQxK5hEvKq9XfhG-ohIkRrLcnEDALcQ8ItzZpB-g5Bz8SlGeowJlvitS45QeCCiIqbg/exec"; 
+        
         let billsData = [];
 
         async function syncData() {
-            document.getElementById('app-card').classList.add('is-loading');
+            const card = document.getElementById('app-card');
+            card.classList.add('is-loading');
+            
             try {
-                const response = await fetch(WEB_APP_URL);
+                // Adicionado redirect: "follow" para resolver o erro de CORS do Google
+                const response = await fetch(WEB_APP_URL, { redirect: "follow" });
+                if (!response.ok) throw new Error("Erro na rede");
+                
                 billsData = await response.json();
                 renderBills();
             } catch (e) {
-                console.error("Erro ao carregar dados");
+                console.error("Erro detalhado:", e);
+                document.getElementById('bills-list').innerHTML = `
+                    <div class="text-center p-4">
+                        <p class="text-red-500 font-bold">Erro de Sincronização</p>
+                        <p class="text-xs text-gray-500 mt-2">Verifique se a implantação está como "Qualquer pessoa" e use uma "Nova Versão".</p>
+                    </div>`;
             } finally {
-                document.getElementById('app-card').classList.remove('is-loading');
+                card.classList.remove('is-loading');
             }
         }
 
@@ -66,21 +80,22 @@
             let total = 0, pendente = 0;
 
             billsData.forEach(bill => {
-                total += bill.valor;
-                if (!bill.status) pendente += bill.valor;
+                const valorNum = parseFloat(bill.valor) || 0;
+                total += valorNum;
+                if (!bill.status) pendente += valorNum;
 
                 const div = document.createElement('div');
-                div.className = `flex items-center p-4 border rounded-2xl transition-all ${bill.status ? 'bg-gray-50 pago' : 'bg-white shadow-sm border-blue-50'}`;
+                div.className = `flex items-center p-4 border rounded-2xl transition-all ${bill.status ? 'bg-gray-50 pago border-transparent' : 'bg-white shadow-sm border-blue-50'}`;
                 
                 div.innerHTML = `
                     <input type="checkbox" ${bill.status ? 'checked' : ''} 
                            onchange="toggleBill('${bill.id}', this.checked)" class="h-6 w-6 text-blue-600">
                     <div class="ml-4 flex-1">
-                        <label class="block font-bold text-gray-700">${bill.label}</label>
-                        <span class="text-xs text-gray-400">Vencimento: Dia ${bill.vencimento}</span>
+                        <label class="block font-bold text-gray-700 leading-tight">${bill.label}</label>
+                        <span class="text-[10px] font-bold text-gray-400 uppercase">Dia ${bill.vencimento}</span>
                     </div>
                     <div class="text-right">
-                        <span class="block font-bold text-blue-600">R$ ${bill.valor.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</span>
+                        <span class="block font-bold text-blue-600">R$ ${valorNum.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</span>
                     </div>
                 `;
                 listElement.appendChild(div);
@@ -94,20 +109,18 @@
             try {
                 await fetch(WEB_APP_URL, {
                     method: 'POST',
-                    mode: 'no-cors',
+                    mode: 'no-cors', // Essencial para evitar bloqueio de CORS no POST do Google
                     body: JSON.stringify({ id, status })
                 });
-                // Atualiza a interface localmente
                 const bill = billsData.find(b => b.id === id);
                 if (bill) bill.status = status;
                 renderBills();
             } catch (e) {
-                alert("Erro ao salvar");
+                console.error("Erro ao salvar:", e);
             }
         }
 
-        syncData();
-        setInterval(syncData, 60000); // Atualiza a cada 1 minuto
+        if(WEB_APP_URL !== "https://script.google.com/macros/s/AKfycbxEQxK5hEvKq9XfhG-ohIkRrLcnEDALcQ8ItzZpB-g5Bz8SlGeowJlvitS45QeCCiIqbg/exec") syncData();
     </script>
 </body>
 </html>
